@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -19,6 +23,8 @@ var (
 	syncMode         bool
 	generateConfig   string
 	remoteURL        string
+	daemonMode       bool
+	syncInterval     time.Duration
 )
 
 var rootCmd = &cobra.Command{
@@ -61,6 +67,17 @@ var syncCmd = &cobra.Command{
 the system clock. Requires appropriate system privileges.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		syncMode = true
+		runClient()
+	},
+}
+
+var daemonCmd = &cobra.Command{
+	Use:   "daemon",
+	Short: "Run as a continuous time synchronization service",
+	Long: `Run as a continuous time synchronization service that periodically checks and
+synchronizes system time. Designed to work with systemd as a simple service.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		daemonMode = true
 		runClient()
 	},
 }
@@ -111,6 +128,9 @@ func init() {
 	testCmd.Flags().DurationVar(&testTimeout, "timeout", 30*time.Second, "Test timeout duration")
 	testCmd.Flags().StringVar(&testResultFile, "output", "ntp_test_results.json", "Test results output file")
 	
+	// Daemon command flags
+	daemonCmd.Flags().DurationVar(&syncInterval, "interval", 300*time.Second, "Time synchronization interval")
+	
 	// Generate config flags
 	rootCmd.Flags().StringVar(&generateConfig, "generate-config", "", "Generate default config file (json|yaml)")
 	
@@ -118,6 +138,7 @@ func init() {
 	configCmd.AddCommand(generateConfigCmd)
 	rootCmd.AddCommand(testCmd)
 	rootCmd.AddCommand(syncCmd)
+	rootCmd.AddCommand(daemonCmd)
 	rootCmd.AddCommand(configCmd)
 }
 
@@ -159,6 +180,9 @@ func loadConfig() *Config {
 	config.RemoteServerListURL = remoteURL
 	config.TestTimeout = testTimeout
 	config.TestResultFile = testResultFile
+	if syncInterval > 0 {
+		config.SyncInterval = syncInterval
+	}
 	
 	// Load remote servers if configured
 	if config.RemoteServerListURL != "" {
@@ -189,6 +213,9 @@ func runClient() {
 	} else if syncMode {
 		fmt.Printf("🕐 Running in sync mode...\n")
 		runSyncMode(client)
+	} else if daemonMode {
+		fmt.Printf("🔄 Running in daemon mode...\n")
+		runDaemonMode(client, config)
 	} else {
 		fmt.Printf("📋 Running basic server list and status check...\n")
 		runInfoMode(client, config)
@@ -256,6 +283,57 @@ func runSyncMode(client *HANTPClient) {
 	fmt.Printf("✅ Time synchronization completed!\n")
 }
 
+func runDaemonMode(client *HANTPClient, config *Config) {
+	fmt.Printf("🔄 Starting NTP synchronization daemon...\n")
+	fmt.Printf("⏰ Sync interval: %v\n", config.SyncInterval)
+	fmt.Printf("🚀 Daemon started, use Ctrl+C to stop\n")
+	
+	// 创建上下文，用于优雅关闭
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	
+	// 设置信号处理
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	
+	// 启动信号处理goroutine
+	go func() {
+		sig := <-sigChan
+		fmt.Printf("\n📡 Received signal: %v\n", sig)
+		fmt.Printf("🛑 Shutting down gracefully...\n")
+		cancel()
+	}()
+	
+	// 立即执行一次同步
+	fmt.Printf("🕐 Performing initial time synchronization...\n")
+	err := client.SyncTimeFromBestServer()
+	if err != nil {
+		log.Printf("⚠️ Initial sync failed: %v", err)
+	} else {
+		fmt.Printf("✅ Initial sync completed\n")
+	}
+	
+	// 定时同步循环
+	ticker := time.NewTicker(config.SyncInterval)
+	defer ticker.Stop()
+	
+	for {
+		select {
+		case <-ctx.Done():
+			fmt.Printf("✅ Daemon stopped\n")
+			return
+		case <-ticker.C:
+			fmt.Printf("🔄 Starting periodic time synchronization...\n")
+			err := client.SyncTimeFromBestServer()
+			if err != nil {
+				log.Printf("⚠️ Periodic sync failed: %v", err)
+			} else {
+				fmt.Printf("✅ Periodic sync completed at %s\n", time.Now().Format("2006-01-02 15:04:05"))
+			}
+		}
+	}
+}
+
 func runInfoMode(client *HANTPClient, config *Config) {
 	servers := config.GetAllEnabledServers()
 	
@@ -274,7 +352,8 @@ func runInfoMode(client *HANTPClient, config *Config) {
 	fmt.Printf("\n💡 Usage Tips:\n")
 	fmt.Printf("==========================================\n")
 	fmt.Printf("• Run 'ha-ntp-client test' to test all servers\n")
-	fmt.Printf("• Run 'ha-ntp-client sync' to synchronize time\n")
+	fmt.Printf("• Run 'ha-ntp-client sync' to synchronize time once\n")
+	fmt.Printf("• Run 'ha-ntp-client daemon' for continuous synchronization\n")
 	fmt.Printf("• Use '--config file.yaml' to load custom configuration\n")
 	fmt.Printf("• Use '--generate-config yaml' to create a config file\n")
 	

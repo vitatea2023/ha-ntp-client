@@ -45,6 +45,9 @@ type Config struct {
 	TestMode          bool          `json:"test_mode" yaml:"test_mode"`
 	TestTimeout       time.Duration `json:"test_timeout" yaml:"test_timeout"`
 	TestResultFile    string        `json:"test_result_file" yaml:"test_result_file"`
+	
+	// Daemon mode configuration
+	SyncInterval      time.Duration `json:"sync_interval" yaml:"sync_interval"`
 }
 
 // LoadDefaultConfig creates a configuration with built-in Aliyun NTP servers
@@ -74,6 +77,7 @@ func LoadDefaultConfig() *Config {
 		TestMode:            false,
 		TestTimeout:         30 * time.Second,
 		TestResultFile:      "ntp_test_results.json",
+		SyncInterval:        300 * time.Second, // 5分钟
 	}
 }
 
