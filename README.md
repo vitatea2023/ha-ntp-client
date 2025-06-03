@@ -188,7 +188,7 @@ The test command generates detailed JSON reports:
     "delay": "25ms",
     "success": true
   },
-  "all_results": [...],
+  "all_results": [],
   "summary": "Best server: ntp1.aliyun.com with offset 5ms"
 }
 ```
@@ -267,12 +267,15 @@ echo "System time set to: $(date)"
   "best_server": {
     "server": {"host": "time.google.com"},
     "ip": "216.239.35.0",
-    "offset": 3992587,     // 3.99ms offset (nanoseconds)
-    "delay": 1853165,      // 1.85ms network delay
+    "offset": 3992587,
+    "delay": 1853165,
     "success": true
   }
 }
 ```
+
+- **offset**: 3992587 (3.99ms offset in nanoseconds)
+- **delay**: 1853165 (1.85ms network delay in nanoseconds)
 
 - **Offset**: Time difference between local and server time
 - **Delay**: Network round-trip time
