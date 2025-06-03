@@ -7,9 +7,12 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"sort"
 	"sync"
+	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/facebook/time/ntp/protocol"
 	dnsclient "github.com/vitatea2023/ha-dns-client"
@@ -456,6 +459,94 @@ func (c *HANTPClient) SaveTestResults(results *NTPTestResults, filename string) 
 	return nil
 }
 
+// setSystemTime sets the system clock to the specified time (Linux/Unix only)
+func setSystemTime(newTime time.Time) error {
+	// Convert to Unix timestamp
+	sec := newTime.Unix()
+	nsec := newTime.UnixNano() % 1e9
+	
+	// Use syscall to set system time
+	tv := syscall.Timeval{
+		Sec:  sec,
+		Usec: nsec / 1000, // Convert nanoseconds to microseconds
+	}
+	
+	err := syscall.Settimeofday(&tv)
+	if err != nil {
+		return fmt.Errorf("settimeofday syscall failed: %w", err)
+	}
+	
+	return nil
+}
+
+// adjustSystemClock adjusts the system clock by the specified offset using adjtimex
+func adjustSystemClock(offset time.Duration) error {
+	// Use adjtimex for gradual time adjustment (Linux only)
+	type timex struct {
+		modes     uint32
+		offset    int64
+		freq      int64
+		maxerror  int64
+		esterror  int64
+		status    int32
+		constant  int64
+		precision int64
+		tolerance int64
+		time      syscall.Timeval
+		tick      int64
+		ppsfreq   int64
+		jitter    int64
+		shift     int32
+		stabil    int64
+		jitcnt    int64
+		calcnt    int64
+		errcnt    int64
+		stbcnt    int64
+		tai       int32
+		_         [44]byte // padding
+	}
+	
+	const ADJ_OFFSET = 0x0001
+	const ADJ_NANO = 0x2000
+	
+	tx := timex{
+		modes:  ADJ_OFFSET | ADJ_NANO,
+		offset: offset.Nanoseconds(),
+	}
+	
+	_, _, errno := syscall.Syscall(syscall.SYS_ADJTIMEX, uintptr(unsafe.Pointer(&tx)), 0, 0)
+	if errno != 0 {
+		return fmt.Errorf("adjtimex syscall failed: %v", errno)
+	}
+	
+	return nil
+}
+
+// syncTimeWithCommand uses external command to set time (fallback method)
+func syncTimeWithCommand(offset time.Duration) error {
+	// Try different time setting commands
+	commands := [][]string{
+		{"timedatectl", "set-time", time.Now().Add(offset).Format("2006-01-02 15:04:05")},
+		{"date", "-s", time.Now().Add(offset).Format("2006-01-02 15:04:05")},
+	}
+	
+	for _, cmd := range commands {
+		if _, err := exec.LookPath(cmd[0]); err == nil {
+			log.Printf("🔧 Using %s to set time...", cmd[0])
+			execCmd := exec.Command(cmd[0], cmd[1:]...)
+			output, err := execCmd.CombinedOutput()
+			if err != nil {
+				log.Printf("⚠️ Command %s failed: %v, output: %s", cmd[0], err, string(output))
+				continue
+			}
+			log.Printf("✅ Time set successfully using %s", cmd[0])
+			return nil
+		}
+	}
+	
+	return fmt.Errorf("no suitable time setting command found")
+}
+
 // SyncTimeFromBestServer synchronizes system time using the best available server
 func (c *HANTPClient) SyncTimeFromBestServer() error {
 	log.Printf("🕐 Starting time synchronization...")
@@ -484,10 +575,46 @@ func (c *HANTPClient) SyncTimeFromBestServer() error {
 	log.Printf("   Threshold: %v", c.config.SyncThreshold)
 	log.Printf("   Best server: %s (%s)", bestResult.Server.Host, bestResult.IP)
 	
-	// In a real implementation, you would adjust the system clock here
-	// This requires appropriate privileges and platform-specific code
-	log.Printf("⚡ Time synchronization would adjust clock by: %v", bestResult.Offset)
-	log.Printf("💡 Note: Actual clock adjustment requires system privileges")
+	// Check if running as root
+	if os.Geteuid() != 0 {
+		log.Printf("❌ Time synchronization requires root privileges")
+		log.Printf("💡 Please run with: sudo ./ha-ntp-client sync")
+		return fmt.Errorf("insufficient privileges: must run as root")
+	}
 	
-	return nil
+	// Attempt different time setting methods
+	log.Printf("⚡ Adjusting system clock by: %v", bestResult.Offset)
+	
+	// Method 1: Try gradual adjustment with adjtimex (preferred for small offsets)
+	if absOffset < 1*time.Second {
+		log.Printf("🔧 Using gradual time adjustment (adjtimex)...")
+		err := adjustSystemClock(bestResult.Offset)
+		if err == nil {
+			log.Printf("✅ Time synchronized successfully using gradual adjustment")
+			return nil
+		}
+		log.Printf("⚠️ Gradual adjustment failed: %v", err)
+	}
+	
+	// Method 2: Try direct time setting with syscall
+	log.Printf("🔧 Using direct time setting (settimeofday)...")
+	newTime := time.Now().Add(bestResult.Offset)
+	err := setSystemTime(newTime)
+	if err == nil {
+		log.Printf("✅ Time synchronized successfully using settimeofday")
+		log.Printf("🕐 System time adjusted to: %s", newTime.Format("2006-01-02 15:04:05 MST"))
+		return nil
+	}
+	log.Printf("⚠️ Direct time setting failed: %v", err)
+	
+	// Method 3: Try external commands as fallback
+	log.Printf("🔧 Using external commands as fallback...")
+	err = syncTimeWithCommand(bestResult.Offset)
+	if err == nil {
+		log.Printf("✅ Time synchronized successfully using external command")
+		return nil
+	}
+	log.Printf("⚠️ External command failed: %v", err)
+	
+	return fmt.Errorf("all time synchronization methods failed")
 }
