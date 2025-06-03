@@ -1,0 +1,44 @@
+[
+  {
+    "host": "time1.aliyun.com",
+    "port": 123,
+    "weight": 95,
+    "enabled": true,
+    "location": "China"
+  },
+  {
+    "host": "time2.aliyun.com",
+    "port": 123,
+    "weight": 95,
+    "enabled": true,
+    "location": "China"
+  },
+  {
+    "host": "ntp.tencent.com",
+    "port": 123,
+    "weight": 80,
+    "enabled": true,
+    "location": "China"
+  },
+  {
+    "host": "ntp.baidu.com",
+    "port": 123,
+    "weight": 75,
+    "enabled": true,
+    "location": "China"
+  },
+  {
+    "host": "time.windows.com",
+    "port": 123,
+    "weight": 55,
+    "enabled": true,
+    "location": "Global"
+  },
+  {
+    "host": "time.apple.com",
+    "port": 123,
+    "weight": 55,
+    "enabled": true,
+    "location": "Global"
+  }
+]

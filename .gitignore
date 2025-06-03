@@ -1,0 +1,23 @@
+# Binaries
+ha-ntp-client
+ha-ntp-client.exe
+
+# Test results
+ntp_test_results.json
+
+# Go build artifacts
+*.log
+*.tmp
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config files (optional - remove if you want to commit config examples)
+ha-ntp-config.*

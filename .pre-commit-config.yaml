@@ -1,0 +1,26 @@
+repos:
+  - repo: local
+    hooks:
+      - id: check-file-size
+        name: Check file size limit (9.9MB)
+        entry: >
+          perl -e 'foreach (@ARGV) { 
+            next unless -f $_; 
+            my $size = -s $_; 
+            if ($size > 10368000) { 
+              printf STDERR "Error: File %s is too large (%.2fMB, max 9.9MB allowed)\n", $_, $size/(1024*1024); 
+              exit 1; 
+            } 
+          }'
+        language: system
+        stages: [commit]
+        
+      - id: check-file-count
+        name: Check file count limit (100 files)
+        entry: >
+          perl -e 'if (@ARGV > 100) { 
+            printf STDERR "Error: Too many files in commit (%d files, max 100 allowed)\n", scalar(@ARGV); 
+            exit 1; 
+          }'
+        language: system
+        stages: [commit]
