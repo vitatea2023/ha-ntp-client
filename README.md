@@ -220,6 +220,64 @@ The client implements comprehensive error handling:
 - **Network Issues**: Tests multiple servers in parallel
 - **Configuration Errors**: Provides detailed error messages
 
+## Testing Time Synchronization
+
+### Verify Current Time Accuracy
+
+```bash
+# Test all servers and check time offset
+./ha-ntp-client test
+
+# Quick sync check
+./ha-ntp-client sync
+```
+
+### Demo: Testing with Incorrect System Time
+
+To demonstrate the time synchronization effectiveness:
+
+```bash
+# 1. Check current time and offset
+./ha-ntp-client test | grep "Best server"
+
+# 2. Deliberately set incorrect time (requires sudo)
+sudo date -s "12:30:00"
+echo "System time set to: $(date)"
+
+# 3. Test time offset (should show large offset)
+./ha-ntp-client test --parallel 3
+
+# 4. Synchronize time
+./ha-ntp-client sync
+
+# 5. Verify synchronization worked
+./ha-ntp-client test | grep "Best server"
+```
+
+### Expected Results
+
+- **Before sync**: Large time offset (potentially minutes/hours)
+- **After sync**: Small offset (typically < 10ms for global servers, ~50ms for China servers)
+- **Sync threshold**: Default 100ms (configurable)
+
+### Interpreting Test Results
+
+```json
+{
+  "best_server": {
+    "server": {"host": "time.google.com"},
+    "ip": "216.239.35.0",
+    "offset": 3992587,     // 3.99ms offset (nanoseconds)
+    "delay": 1853165,      // 1.85ms network delay
+    "success": true
+  }
+}
+```
+
+- **Offset**: Time difference between local and server time
+- **Delay**: Network round-trip time
+- **Lower values**: Better server performance
+
 ## Use Cases
 
 ### Edge Computing
