@@ -241,7 +241,7 @@ To demonstrate the time synchronization effectiveness:
 ./ha-ntp-client test | grep "Best server"
 
 # 2. Deliberately set incorrect time (requires sudo)
-sudo date -s "12:30:00"
+sudo timedatectl set-time "12:30:00"
 echo "System time set to: $(date)"
 
 # 3. Test time offset (should show large offset)
