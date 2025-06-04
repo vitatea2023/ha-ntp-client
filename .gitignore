@@ -1,6 +1,7 @@
 # Binaries
 ha-ntp-client
 ha-ntp-client.exe
+bin/
 
 # Test results
 ntp_test_results.json
